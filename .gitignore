@@ -1,0 +1,6 @@
+mywm
+*.o
+*-protocol.c
+*-protocol.h
+
+compile_flags.txt

@@ -287,6 +287,44 @@ void new_input(struct wl_listener *listener, void *data) {
 	wlr_seat_set_capabilities(server->seat, caps);
 }
 
+void tile(struct wl_list *outputs, struct wl_list *clients) {
+	struct mywm_output *output;
+	struct mywm_client *client;
+	int client_count;
+	int effective_width;
+	int effective_height;
+	int width, height;
+	int i, x, y;
+
+	output = wl_container_of(outputs->prev, output, link);
+	client_count = wl_list_length(clients);
+	i = x = y = 0;
+
+	wlr_output_effective_resolution(output->wlr_output, &width, &height);
+	width = effective_width = output->wlr_output->width;
+	height = effective_height = output->wlr_output->height;
+
+	wl_list_for_each(client, clients, link) {
+		if (i > 0) {
+			width = effective_width - width;
+			height = effective_height / (client_count - 1);
+			x = effective_width - width;
+			y = height * (i - 1);
+			wlr_xdg_toplevel_set_size(client->xdg_surface->toplevel,
+					width, height);
+			wlr_scene_node_set_position(&client->scene_tree->node, x, y);
+		} else {
+			if (client_count > 1) {
+				width *= 0.625;
+			}
+			wlr_xdg_toplevel_set_size(client->xdg_surface->toplevel,
+					width, height);
+			wlr_scene_node_set_position(&client->scene_tree->node, x, y);
+		}
+		i++;
+	}
+}
+
 void focus_client(struct mywm_client *client, struct wlr_surface *surface) {
 	struct wlr_seat *seat;
 	struct wlr_keyboard *keyboard;
@@ -312,20 +350,28 @@ void focus_client(struct mywm_client *client, struct wlr_surface *surface) {
 
 void surface_handle_map(struct wl_listener *listener, void *data) {
 	struct mywm_client *client;
+	struct mywm_server *server;
 
 	client = wl_container_of(listener, client, map);
+	server = client->server;
 
-	wl_list_insert(&client->server->clients, &client->link);
+	wl_list_insert(&server->clients, &client->link);
+
+	tile(&server->outputs, &server->clients);
 
 	focus_client(client, client->xdg_surface->surface);
 }
 
 void surface_handle_unmap(struct wl_listener *listener, void *data) {
 	struct mywm_client *client;
+	struct mywm_server *server;
 
 	client = wl_container_of(listener, client, unmap);
+	server = client->server;
 
 	wl_list_remove(&client->link);
+
+	tile(&server->outputs, &server->clients);
 }
 
 void surface_destroy(struct wl_listener *listener, void *data) {

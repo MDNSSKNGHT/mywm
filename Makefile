@@ -10,14 +10,11 @@ LIBS = -lwayland-server -lwlroots -lxkbcommon
 
 all: mywm
 
-%.o: %.c
-	$(CC) -c -o $@ $< $(CFLAGS)
-
 xdg-shell-protocol.h:
 	$(WAYLAND_SCANNER) server-header \
 		$(WAYLAND_PROTOCOLS)/stable/xdg-shell/xdg-shell.xml $@
 
-mywm: xdg-shell-protocol.h mywm.o
+mywm: xdg-shell-protocol.h mywm.c
 	$(CC) -o $@ $^ $(CFLAGS) $(LIBS)
 
 .PHONY: clean

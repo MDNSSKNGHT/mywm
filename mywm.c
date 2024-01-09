@@ -24,8 +24,11 @@
 #include <wlr/types/wlr_seat.h>
 #include <wlr/types/wlr_subcompositor.h>
 #include <wlr/types/wlr_xdg_shell.h>
+#include <wlr/util/box.h>
 #include <xkbcommon/xkbcommon.h>
 
+#define MAX(A, B) ((A) > (B) ? (A) : (B))
+#define MIN(A, B) ((A) < (B) ? (A) : (B))
 #define NOTIFY(n, f) (n).notify = f
 #define LISTEN(p, e, n) wl_signal_add(&(p)->events.e, n)
 
@@ -68,6 +71,8 @@ struct mywm_client {
 	struct wl_listener map;
 	struct wl_listener unmap;
 	struct wl_listener destroy;
+	int width, height;
+	int x, y;
 };
 
 struct mywm_keyboard {
@@ -276,37 +281,14 @@ void new_input(struct wl_listener *listener, void *data) {
 	wlr_seat_set_capabilities(server->seat, caps);
 }
 
-void tile(struct wl_list *clients) {
-	struct wlr_output *wlr_output;
-	struct mywm_client *client;
-	struct mywm_server *server;
-	int nclient;
-	int twidth, width;
-	int theight, height;
-	int i, x, y;
-
-	i = x = y = 0;
-	nclient = wl_list_length(clients);
-
-	wl_list_for_each(client, clients, link) {
-		i++;
-
-		server = client->server;
-		wlr_output = wlr_output_layout_get_center_output(
-				server->output_layout);
-
-		wlr_output_effective_resolution(wlr_output, &width, &height);
-
-		twidth = width / nclient;
-		theight = height;
-
-		x = twidth * (i - 1);
-		y = 0;
-
-		wlr_xdg_toplevel_set_size(client->xdg_surface->toplevel,
-				twidth, theight);
-		wlr_scene_node_set_position(&client->scene_tree->node, x, y);
-	}
+void resize_client(struct mywm_client *client, int x, int y,
+		int width, int height) {
+	wlr_xdg_toplevel_set_size(client->xdg_surface->toplevel, width, height);
+	wlr_scene_node_set_position(&client->scene_tree->node, x, y);
+	client->width = width;
+	client->height = height;
+	client->x = x;
+	client->y = y;
 }
 
 void focus_client(struct mywm_client *client, struct wlr_surface *surface) {
@@ -348,14 +330,53 @@ void focus_client(struct mywm_client *client, struct wlr_surface *surface) {
 	}
 }
 
+void tile(struct wlr_output_layout *output_layout, struct wl_list *clients) {
+	struct wlr_output *wlr_output;
+	struct mywm_client *client;
+	unsigned int i, n, h, mw, my, ty;
+
+	n = wl_list_length(clients);
+	if (n == 0) {
+		return;
+	}
+
+	wlr_output = wlr_output_layout_get_center_output(output_layout);
+
+	if (n > 1) {
+		mw = wlr_output->width * 0.55;
+	} else {
+		mw = wlr_output->width;
+	}
+	i = my = ty = 0;
+
+	wl_list_for_each_reverse(client, clients, link) {
+		if (i < 1) {
+			h = (wlr_output->height - my) / (MIN(n, 1) - i);
+			resize_client(client, 0, my, mw, h);
+			if (my + client->height < wlr_output->height) {
+				my += client->height;
+			}
+		} else {
+			h = (wlr_output->height - ty) / (n - i);
+			resize_client(client, mw, ty, wlr_output->width - mw, h);
+			if (ty + client->height < wlr_output->height) {
+				ty += client->height;
+			}
+		}
+		i++;
+	}
+}
+
 void surface_map(struct wl_listener *listener, void *data) {
 	struct mywm_client *client;
+	struct mywm_server *server;
 
 	client = wl_container_of(listener, client, map);
+	server = client->server;
 
-	wl_list_insert(&client->server->clients, &client->link);
+	wl_list_insert(&server->clients, &client->link);
 
-	tile(&client->server->clients);
+	tile(server->output_layout, &server->clients);
 
 	focus_client(client, client->xdg_surface->surface);
 }
@@ -369,7 +390,7 @@ void surface_unmap(struct wl_listener *listener, void *data) {
 
 	wl_list_remove(&client->link);
 
-	tile(&client->server->clients);
+	tile(server->output_layout, &server->clients);
 
 	if (!wl_list_empty(&server->clients)) {
 		prev_client = wl_container_of(server->clients.next, prev_client, link);

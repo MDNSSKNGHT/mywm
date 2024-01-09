@@ -39,6 +39,7 @@ struct mywm_server {
 
 	struct wlr_xdg_shell *xdg_shell;
 	struct wl_listener new_xdg_surface;
+
 	struct wl_list clients;
 
 	struct wlr_seat *seat;
@@ -383,7 +384,7 @@ void surface_handle_unmap(struct wl_listener *listener, void *data) {
 	tile(&client->server->clients);
 
 	if (!wl_list_empty(&server->clients)) {
-		prev_client = wl_container_of(server->clients.prev, prev_client, link);
+		prev_client = wl_container_of(server->clients.next, prev_client, link);
 		focus_client(prev_client, prev_client->xdg_surface->surface);
 	}
 }

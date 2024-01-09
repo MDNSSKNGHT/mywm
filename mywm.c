@@ -81,29 +81,16 @@ struct mywm_keyboard {
 };
 
 void output_frame(struct wl_listener *listener, void *data) {
-	struct wlr_scene *scene;
 	struct wlr_scene_output *scene_output;
 	struct timespec now;
 	struct mywm_server *server;
 	struct mywm_output *output;
-	int width;
-	int height;
-	float *color;
 
 	output = wl_container_of(listener, output, frame);
 	server = output->server;
-	scene = server->scene;
-	scene_output = wlr_scene_get_scene_output(scene, output->wlr_output);
+	scene_output = wlr_scene_get_scene_output(server->scene,
+			output->wlr_output);
 
-	/* wlr_output_effective_resolution(output->wlr_output, &width, &height); */
-	/* wlr_output_attach_render(output->wlr_output, NULL); */
-
-	/* color = (float[]){0.5, 0.5, 0.5, 1.0}; */
-	/* wlr_renderer_begin(output->server->renderer, width, height); */
-	/* wlr_renderer_clear(output->server->renderer, color); */
-	/* wlr_renderer_end(output->server->renderer); */
-
-	/* wlr_output_commit(output->wlr_output); */
 	wlr_scene_output_commit(scene_output, NULL);
 
 	clock_gettime(CLOCK_MONOTONIC, &now);
@@ -137,8 +124,8 @@ void new_output(struct wl_listener *listener, void *data) {
 	struct wlr_output *wlr_output;
 	struct wlr_output_state state;
 	struct wlr_output_mode *mode;
-	struct wlr_output_layout_output *lo;
-	struct wlr_scene_output *so;
+	struct wlr_output_layout_output *layout_output;
+	struct wlr_scene_output *scene_output;
 	struct mywm_server *server;
 	struct mywm_output *output;
 
@@ -159,8 +146,8 @@ void new_output(struct wl_listener *listener, void *data) {
 	wlr_output_state_finish(&state);
 
 	output = malloc(sizeof(struct mywm_output));
-	output->wlr_output = wlr_output;
 	output->server = server;
+	output->wlr_output = wlr_output;
 
 	NOTIFY(output->frame, output_frame);
 	LISTEN(wlr_output, frame, &output->frame);
@@ -173,10 +160,12 @@ void new_output(struct wl_listener *listener, void *data) {
 
 	wl_list_insert(&server->outputs, &output->link);
 
-	lo = wlr_output_layout_add_auto(server->output_layout, wlr_output);
-	so = wlr_scene_output_create(server->scene, wlr_output);
+	layout_output = wlr_output_layout_add_auto(server->output_layout,
+			wlr_output);
+	scene_output = wlr_scene_output_create(server->scene, wlr_output);
 
-	wlr_scene_output_layout_add_output(server->scene_layout, lo, so);
+	wlr_scene_output_layout_add_output(server->scene_layout, layout_output,
+			scene_output);
 }
 
 void keyboard_handle_modifiers(struct wl_listener *listener, void *data) {
@@ -212,7 +201,7 @@ void keyboard_destroy(struct wl_listener *listener, void *data) {
 
 	keyboard = wl_container_of(listener, keyboard, key);
 
-	/* wl_list_remove(&keyboard->modifiers.link); */
+	wl_list_remove(&keyboard->modifiers.link);
 	wl_list_remove(&keyboard->key.link);
 	wl_list_remove(&keyboard->destroy.link);
 	wl_list_remove(&keyboard->link);
@@ -259,12 +248,11 @@ void input_new_keyboard(struct mywm_server *server,
 }
 
 void input_new_pointer(struct mywm_server *server,
-		struct wlr_input_device *device) {
-}
+		struct wlr_input_device *device) {}
 
 void new_input(struct wl_listener *listener, void *data) {
-	struct mywm_server *server;
 	struct wlr_input_device *device;
+	struct mywm_server *server;
 	unsigned int caps;
 
 	device = data;
@@ -328,12 +316,12 @@ void focus_client(struct mywm_client *client, struct wlr_surface *surface) {
 	struct wlr_keyboard *keyboard;
 	struct mywm_server *server;
 
-	server = client->server;
-	seat = server->seat;
-
 	if (client == NULL) {
 		return;
 	}
+
+	server = client->server;
+	seat = server->seat;
 
 	prev_surface = seat->keyboard_state.focused_surface;
 	if (prev_surface == surface) {
@@ -403,8 +391,8 @@ void surface_destroy(struct wl_listener *listener, void *data) {
 
 void new_xdg_surface(struct wl_listener *listener, void *data) {
 	struct wlr_xdg_surface *xdg_surface;
-	struct mywm_server *server;
 	struct mywm_client *client;
+	struct mywm_server *server;
 
 	xdg_surface = data;
 	server = wl_container_of(listener, server, new_xdg_surface);
@@ -499,9 +487,6 @@ int main(int argc, char *argv[]) {
 		}
 	}
 
-	/*
-	 * Ready, set, go!
-	 */
 	wl_display_run(server.wl_display);
 
 	wl_display_destroy(server.wl_display);

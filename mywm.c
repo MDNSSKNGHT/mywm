@@ -16,6 +16,7 @@
 #include <wlr/render/wlr_renderer.h>
 #include <wlr/types/wlr_compositor.h>
 #include <wlr/types/wlr_data_device.h>
+#include <wlr/types/wlr_server_decoration.h>
 #include <wlr/types/wlr_input_device.h>
 #include <wlr/types/wlr_keyboard.h>
 #include <wlr/types/wlr_output.h>
@@ -24,6 +25,7 @@
 #include <wlr/types/wlr_seat.h>
 #include <wlr/types/wlr_subcompositor.h>
 #include <wlr/types/wlr_xdg_shell.h>
+#include <wlr/types/wlr_xdg_decoration_v1.h>
 #include <wlr/util/box.h>
 #include <xkbcommon/xkbcommon.h>
 
@@ -42,6 +44,9 @@ struct mywm_server {
 
 	struct wlr_xdg_shell *xdg_shell;
 	struct wl_listener new_xdg_surface;
+
+	struct wlr_xdg_decoration_manager_v1 *xdg_decoration_mgr;
+	struct wl_listener new_xdg_decoration;
 
 	struct wl_list clients;
 
@@ -436,6 +441,15 @@ void new_xdg_surface(struct wl_listener *listener, void *data) {
 	LISTEN(xdg_surface->surface, destroy, &client->destroy);
 }
 
+void new_xdg_decoration(struct wl_listener *listener, void *data) {
+	struct wlr_xdg_toplevel_decoration_v1 *decoration;
+
+	decoration = data;
+
+	wlr_xdg_toplevel_decoration_v1_set_mode(decoration,
+			WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
+}
+
 int main(int argc, char *argv[]) {
 	struct mywm_server server = {0};
 	const char *socket;
@@ -489,6 +503,15 @@ int main(int argc, char *argv[]) {
 	server.xdg_shell = wlr_xdg_shell_create(server.wl_display, 3);
 	NOTIFY(server.new_xdg_surface, new_xdg_surface);
 	LISTEN(server.xdg_shell, new_surface, &server.new_xdg_surface);
+
+	wlr_server_decoration_manager_set_default_mode(
+			wlr_server_decoration_manager_create(server.wl_display),
+			WLR_SERVER_DECORATION_MANAGER_MODE_SERVER);
+	server.xdg_decoration_mgr = wlr_xdg_decoration_manager_v1_create(
+			server.wl_display);
+	NOTIFY(server.new_xdg_decoration, new_xdg_decoration);
+	LISTEN(server.xdg_decoration_mgr, new_toplevel_decoration,
+			&server.new_xdg_decoration);
 
 	wl_list_init(&server.keyboards);
 

@@ -322,18 +322,34 @@ void tile(struct wl_list *clients) {
 
 void focus_client(struct mywm_client *client, struct wlr_surface *surface) {
 	struct wlr_seat *seat;
+	struct wlr_surface *prev_surface;
+	struct wlr_xdg_toplevel *prev_toplevel;
 	struct wlr_keyboard *keyboard;
 	struct mywm_server *server;
 
 	server = client->server;
+	seat = server->seat;
+
+	if (client == NULL) {
+		return;
+	}
+
+	prev_surface = seat->keyboard_state.focused_surface;
+	if (prev_surface == surface) {
+		return;
+	}
+	if (prev_surface != NULL) {
+		prev_toplevel = wlr_xdg_toplevel_try_from_wlr_surface(prev_surface);
+		if (prev_toplevel != NULL) {
+			wlr_xdg_toplevel_set_activated(prev_toplevel, false);
+		}
+	}
 
 	wlr_scene_node_raise_to_top(&client->scene_tree->node);
 	wl_list_remove(&client->link);
 	wl_list_insert(&server->clients, &client->link);
 
 	wlr_xdg_toplevel_set_activated(client->xdg_surface->toplevel, true);
-
-	seat = server->seat;
 
 	keyboard = wlr_seat_get_keyboard(seat);
 	if (keyboard != NULL) {
@@ -356,13 +372,20 @@ void surface_handle_map(struct wl_listener *listener, void *data) {
 }
 
 void surface_handle_unmap(struct wl_listener *listener, void *data) {
-	struct mywm_client *client;
+	struct mywm_client *prev_client, *client;
+	struct mywm_server *server;
 
 	client = wl_container_of(listener, client, unmap);
+	server = client->server;
 
 	wl_list_remove(&client->link);
 
 	tile(&client->server->clients);
+
+	if (!wl_list_empty(&server->clients)) {
+		prev_client = wl_container_of(server->clients.prev, prev_client, link);
+		focus_client(prev_client, prev_client->xdg_surface->surface);
+	}
 }
 
 void surface_destroy(struct wl_listener *listener, void *data) {

@@ -168,7 +168,7 @@ void new_output(struct wl_listener *listener, void *data) {
 			scene_output);
 }
 
-void keyboard_handle_modifiers(struct wl_listener *listener, void *data) {
+void keyboard_modifiers(struct wl_listener *listener, void *data) {
 	struct wlr_seat *seat;
 	struct wlr_keyboard_key_event *event;
 	struct mywm_keyboard *keyboard;
@@ -182,7 +182,7 @@ void keyboard_handle_modifiers(struct wl_listener *listener, void *data) {
 			&keyboard->wlr_keyboard->modifiers);
 }
 
-void keyboard_handle_key(struct wl_listener *listener, void *data) {
+void keyboard_key(struct wl_listener *listener, void *data) {
 	struct wlr_seat *seat;
 	struct wlr_keyboard_key_event *event;
 	struct mywm_keyboard *keyboard;
@@ -233,10 +233,10 @@ void input_new_keyboard(struct mywm_server *server,
 	xkb_context_unref(context);
 	wlr_keyboard_set_repeat_info(wlr_keyboard, 25, 600);
 
-	NOTIFY(keyboard->modifiers, keyboard_handle_modifiers);
+	NOTIFY(keyboard->modifiers, keyboard_modifiers);
 	LISTEN(wlr_keyboard, modifiers, &keyboard->modifiers);
 
-	NOTIFY(keyboard->key, keyboard_handle_key);
+	NOTIFY(keyboard->key, keyboard_key);
 	LISTEN(wlr_keyboard, key, &keyboard->key);
 
 	NOTIFY(keyboard->destroy, keyboard_destroy);
@@ -348,7 +348,7 @@ void focus_client(struct mywm_client *client, struct wlr_surface *surface) {
 	}
 }
 
-void surface_handle_map(struct wl_listener *listener, void *data) {
+void surface_map(struct wl_listener *listener, void *data) {
 	struct mywm_client *client;
 
 	client = wl_container_of(listener, client, map);
@@ -360,7 +360,7 @@ void surface_handle_map(struct wl_listener *listener, void *data) {
 	focus_client(client, client->xdg_surface->surface);
 }
 
-void surface_handle_unmap(struct wl_listener *listener, void *data) {
+void surface_unmap(struct wl_listener *listener, void *data) {
 	struct mywm_client *prev_client, *client;
 	struct mywm_server *server;
 
@@ -405,10 +405,10 @@ void new_xdg_surface(struct wl_listener *listener, void *data) {
 	client->scene_tree->node.data = client;
 	xdg_surface->data = client->scene_tree;
 
-	NOTIFY(client->map, surface_handle_map);
+	NOTIFY(client->map, surface_map);
 	LISTEN(xdg_surface->surface, map, &client->map);
 
-	NOTIFY(client->unmap, surface_handle_unmap);
+	NOTIFY(client->unmap, surface_unmap);
 	LISTEN(xdg_surface->surface, unmap, &client->unmap);
 
 	NOTIFY(client->destroy, surface_destroy);
@@ -418,18 +418,22 @@ void new_xdg_surface(struct wl_listener *listener, void *data) {
 int main(int argc, char *argv[]) {
 	struct mywm_server server = {0};
 	const char *socket;
-	const char *startup_cmd;
+	const char *startup_cmd = NULL;
 	int c;
 
-	while ((c = getopt(argc, argv, "s:")) != -1) {
+	while ((c = getopt(argc, argv, "s:h")) != -1) {
 		switch (c) {
 		case 's':
 			startup_cmd = optarg;
 			break;
 		default:
-			startup_cmd = NULL;
-			break;
+			printf("Usage: %s [-s startup command]\n", argv[0]);
+			return 0;
 		}
+	}
+	if (optind < argc) {
+		printf("Usage: %s [-s startup command]\n", argv[0]);
+		return 0;
 	}
 
 	server.wl_display = wl_display_create();
@@ -481,7 +485,7 @@ int main(int argc, char *argv[]) {
 	}
 
 	setenv("WAYLAND_DISPLAY", socket, true);
-	if (startup_cmd) {
+	if (startup_cmd != NULL) {
 		if (fork() == 0) {
 			execl("/bin/sh", "/bin/sh", "-c", startup_cmd, NULL);
 		}

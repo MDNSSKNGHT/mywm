@@ -352,7 +352,7 @@ void tile(struct wlr_output_layout *output_layout, struct wl_list *clients) {
 	}
 	i = my = ty = 0;
 
-	wl_list_for_each_reverse(client, clients, link) {
+	wl_list_for_each(client, clients, link) {
 		if (i < 1) {
 			h = (wlr_output->height - my) / (MIN(n, 1) - i);
 			resize_client(client, 0, my, mw, h);
@@ -535,6 +535,8 @@ int main(int argc, char *argv[]) {
 
 	wl_display_run(server.wl_display);
 
+	wl_display_destroy_clients(server.wl_display);
+	wlr_scene_node_destroy(&server.scene->tree.node);
 	wl_display_destroy(server.wl_display);
 	return 0;
 }

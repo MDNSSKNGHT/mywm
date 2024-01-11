@@ -47,6 +47,7 @@ struct mywm_server {
 	struct wl_listener new_xdg_decoration;
 
 	struct wl_list clients;
+	struct mywm_client* active_client;
 
 	struct wlr_seat *seat;
 	struct wl_listener new_input;
@@ -190,10 +191,37 @@ void keyboard_modifiers(struct wl_listener *listener, void *data) {
 			&keyboard->wlr_keyboard->modifiers);
 }
 
+void focus_client(struct mywm_client *client, struct wlr_surface *surface);
+
 bool keyboard_keybinding(struct mywm_server *server, xkb_keysym_t sym) {
+	struct mywm_client *prev_client;
+	struct mywm_client *next_client;
+
 	switch(sym) {
 	case XKB_KEY_Escape:
 		wl_display_terminate(server->wl_display);
+		break;
+	case XKB_KEY_j:
+		if (wl_list_length(&server->clients) < 2) {
+			break;
+		}
+		if (server->active_client->link.next == &server->clients) {
+			break;
+		}
+		next_client = wl_container_of(server->active_client->link.next,
+				next_client, link);
+		focus_client(next_client, next_client->xdg_surface->surface);
+		break;
+	case XKB_KEY_k:
+		if (wl_list_length(&server->clients) < 2) {
+			break;
+		}
+		if (server->active_client->link.next == &server->clients) {
+			break;
+		}
+		prev_client = wl_container_of(server->active_client->link.prev,
+				prev_client, link);
+		focus_client(prev_client, prev_client->xdg_surface->surface);
 		break;
 	default:
 		return false;
@@ -349,8 +377,6 @@ void focus_client(struct mywm_client *client, struct wlr_surface *surface) {
 	}
 
 	wlr_scene_node_raise_to_top(&client->scene_tree->node);
-	wl_list_remove(&client->link);
-	wl_list_insert(&server->clients, &client->link);
 
 	wlr_xdg_toplevel_set_activated(client->xdg_surface->toplevel, true);
 
@@ -360,6 +386,7 @@ void focus_client(struct mywm_client *client, struct wlr_surface *surface) {
 				keyboard->keycodes, keyboard->num_keycodes,
 				&keyboard->modifiers);
 	}
+	server->active_client = client;
 }
 
 void tile(struct wlr_output_layout *output_layout, struct wl_list *clients) {

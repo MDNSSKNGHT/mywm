@@ -193,6 +193,14 @@ void keyboard_modifiers(struct wl_listener *listener, void *data) {
 
 void focus_client(struct mywm_client *client, struct wlr_surface *surface);
 
+void spawn(char *argv[]) {
+	if (fork() == 0) {
+		setsid();
+		execvp(argv[0], argv);
+		exit(EXIT_SUCCESS);
+	}
+}
+
 bool keyboard_keybinding(struct mywm_server *server, xkb_keysym_t sym) {
 	struct mywm_client *prev_client;
 	struct mywm_client *next_client;
@@ -201,11 +209,14 @@ bool keyboard_keybinding(struct mywm_server *server, xkb_keysym_t sym) {
 	case XKB_KEY_Escape:
 		wl_display_terminate(server->wl_display);
 		break;
+	case XKB_KEY_Return:
+		spawn((char*[]){"kitty", NULL});
+		break;
 	case XKB_KEY_c:
 		wlr_xdg_toplevel_send_close(
 				server->active_client->xdg_surface->toplevel);
 		break;
-	case XKB_KEY_j:
+	case XKB_KEY_k:
 		if (wl_list_length(&server->clients) < 2) {
 			break;
 		}
@@ -216,11 +227,11 @@ bool keyboard_keybinding(struct mywm_server *server, xkb_keysym_t sym) {
 				next_client, link);
 		focus_client(next_client, next_client->xdg_surface->surface);
 		break;
-	case XKB_KEY_k:
+	case XKB_KEY_j:
 		if (wl_list_length(&server->clients) < 2) {
 			break;
 		}
-		if (server->active_client->link.next == &server->clients) {
+		if (server->active_client->link.prev == &server->clients) {
 			break;
 		}
 		prev_client = wl_container_of(server->active_client->link.prev,
@@ -251,7 +262,7 @@ void keyboard_key(struct wl_listener *listener, void *data) {
 	nsyms = xkb_state_key_get_syms(keyboard->wlr_keyboard->xkb_state,
 			keycode, &syms);
 	modifiers = wlr_keyboard_get_modifiers(keyboard->wlr_keyboard);
-	if ((modifiers & WLR_MODIFIER_LOGO) &&
+	if ((modifiers & WLR_MODIFIER_ALT) &&
 			event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
 		for (int i = 0; i < nsyms; i++) {
 			handled = keyboard_keybinding(keyboard->server, syms[i]);

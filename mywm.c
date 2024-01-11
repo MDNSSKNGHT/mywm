@@ -201,6 +201,10 @@ bool keyboard_keybinding(struct mywm_server *server, xkb_keysym_t sym) {
 	case XKB_KEY_Escape:
 		wl_display_terminate(server->wl_display);
 		break;
+	case XKB_KEY_c:
+		wlr_xdg_toplevel_send_close(
+				server->active_client->xdg_surface->toplevel);
+		break;
 	case XKB_KEY_j:
 		if (wl_list_length(&server->clients) < 2) {
 			break;

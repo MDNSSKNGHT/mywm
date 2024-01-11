@@ -35,6 +35,7 @@
 #define MIN(A, B) ((A) < (B) ? (A) : (B))
 #define NOTIFY(n, f) (n).notify = f
 #define LISTEN(p, e, n) wl_signal_add(&(p)->events.e, n)
+#define XKBKEYCODE(kc) (kc) + 8
 
 struct mywm_server {
 	struct wl_display *wl_display;
@@ -227,6 +228,9 @@ bool keyboard_keybinding(struct mywm_server *server, xkb_keysym_t sym) {
 		spawn((char*[]){"kitty", NULL});
 		break;
 	case XKB_KEY_c:
+		if (wl_list_empty(&server->clients)) {
+			break;
+		}
 		wlr_xdg_toplevel_send_close(
 				server->active_client->xdg_surface->toplevel);
 		break;
@@ -272,7 +276,7 @@ void keyboard_key(struct wl_listener *listener, void *data) {
 	keyboard = wl_container_of(listener, keyboard, key);
 	seat = keyboard->server->seat;
 
-	keycode = event->keycode + 8;
+	keycode = XKBKEYCODE(event->keycode);
 	nsyms = xkb_state_key_get_syms(keyboard->wlr_keyboard->xkb_state,
 			keycode, &syms);
 	modifiers = wlr_keyboard_get_modifiers(keyboard->wlr_keyboard);
@@ -415,7 +419,7 @@ void cursor_axis(struct wl_listener *listener, void *data) {
 	struct mywm_server *server;
 
 	event = data;
-	server = wl_container_of(listener, server, cursor_button);
+	server = wl_container_of(listener, server, cursor_axis);
 
 	wlr_seat_pointer_notify_axis(server->seat, event->time_msec,
 			event->orientation, event->delta, event->delta_discrete,

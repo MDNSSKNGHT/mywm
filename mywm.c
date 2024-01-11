@@ -10,9 +10,11 @@
 #include <time.h>
 #include <unistd.h>
 #include <wayland-server-core.h>
+#include <wayland-util.h>
 #include <wlr/backend.h>
 #include <wlr/render/allocator.h>
 #include <wlr/render/wlr_renderer.h>
+#include <wlr/types/wlr_cursor.h>
 #include <wlr/types/wlr_compositor.h>
 #include <wlr/types/wlr_data_device.h>
 #include <wlr/types/wlr_server_decoration.h>
@@ -20,9 +22,11 @@
 #include <wlr/types/wlr_keyboard.h>
 #include <wlr/types/wlr_output.h>
 #include <wlr/types/wlr_output_layout.h>
+#include <wlr/types/wlr_pointer.h>
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_seat.h>
 #include <wlr/types/wlr_subcompositor.h>
+#include <wlr/types/wlr_xcursor_manager.h>
 #include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/types/wlr_xdg_decoration_v1.h>
 #include <xkbcommon/xkbcommon.h>
@@ -46,11 +50,21 @@ struct mywm_server {
 	struct wlr_xdg_decoration_manager_v1 *xdg_decoration_mgr;
 	struct wl_listener new_xdg_decoration;
 
+	struct wlr_cursor *cursor;
+	struct wlr_xcursor_manager *cursor_mgr;
+	struct wl_listener cursor_motion;
+	struct wl_listener cursor_motion_absolute;
+	struct wl_listener cursor_button;
+	struct wl_listener cursor_axis;
+	struct wl_listener cursor_frame;
+
 	struct wl_list clients;
 	struct mywm_client *active_client;
 
 	struct wlr_seat *seat;
 	struct wl_listener new_input;
+	struct wl_listener request_cursor;
+	struct wl_listener request_set_selection;
 	struct wl_list keyboards;
 
 	struct wlr_output_layout *output_layout;
@@ -327,8 +341,99 @@ void input_new_keyboard(struct mywm_server *server,
 	wl_list_insert(&server->keyboards, &keyboard->link);
 }
 
+struct mywm_client *client_at(struct mywm_server *server, double lx, double ly,
+		struct wlr_surface **surface, double *sx, double *sy);
+
+void process_cursor_motion(struct mywm_server *server, unsigned int time) {
+	struct wlr_seat *seat;
+	struct wlr_surface *surface = NULL;
+	struct wlr_cursor *cursor;
+	struct mywm_client *client;
+	double sx, sy;
+
+	cursor = server->cursor;
+	seat = server->seat;
+
+	client = client_at(server, cursor->x, cursor->y, &surface, &sx, &sy);
+	if (client == NULL) {
+		wlr_cursor_set_xcursor(cursor, server->cursor_mgr, "default");
+	}
+	if (surface == NULL) {
+		wlr_seat_pointer_clear_focus(seat);
+		return;
+	}
+	wlr_seat_pointer_notify_enter(seat, surface, sx, sy);
+	wlr_seat_pointer_notify_motion(seat, time, sx, sy);
+}
+
+void cursor_motion(struct wl_listener *listener, void *data) {
+	struct wlr_pointer_motion_event *event;
+	struct mywm_server *server;
+
+	event = data;
+	server = wl_container_of(listener, server, cursor_motion);
+
+	wlr_cursor_move(server->cursor, &event->pointer->base,
+			event->delta_x, event->delta_y);
+	process_cursor_motion(server, event->time_msec);
+}
+
+void cursor_motion_absolute(struct wl_listener *listener, void *data) {
+	struct wlr_pointer_motion_absolute_event *event;
+	struct mywm_server *server;
+
+	event = data;
+	server = wl_container_of(listener, server, cursor_motion_absolute);
+
+	wlr_cursor_warp_absolute(server->cursor, &event->pointer->base,
+			event->x, event->y);
+	process_cursor_motion(server, event->time_msec);
+}
+
+void cursor_button(struct wl_listener *listener, void *data) {
+	struct wlr_surface *surface = NULL;
+	struct wlr_cursor *cursor;
+	struct wlr_pointer_button_event *event;
+	struct mywm_client *client;
+	struct mywm_server *server;
+	double sx, sy;
+
+	event = data;
+	server = wl_container_of(listener, server, cursor_button);
+	cursor = server->cursor;
+
+	wlr_seat_pointer_notify_button(server->seat, event->time_msec,
+			event->button, event->state);
+	client = client_at(server, cursor->x, cursor->y, &surface, &sx, &sy);
+	if (event->state == WLR_BUTTON_PRESSED && client != NULL) {
+		focus_client(client, surface);
+	}
+}
+
+void cursor_axis(struct wl_listener *listener, void *data) {
+	struct wlr_pointer_axis_event *event;
+	struct mywm_server *server;
+
+	event = data;
+	server = wl_container_of(listener, server, cursor_button);
+
+	wlr_seat_pointer_notify_axis(server->seat, event->time_msec,
+			event->orientation, event->delta, event->delta_discrete,
+			event->source);
+}
+
+void cursor_frame(struct wl_listener *listener, void *data) {
+	struct mywm_server *server;
+
+	server = wl_container_of(listener, server, cursor_frame);
+
+	wlr_seat_pointer_notify_frame(server->seat);
+}
+
 void input_new_pointer(struct mywm_server *server,
-		struct wlr_input_device *device) {}
+		struct wlr_input_device *device) {
+	wlr_cursor_attach_input_device(server->cursor, device);
+}
 
 void new_input(struct wl_listener *listener, void *data) {
 	struct wlr_input_device *device;
@@ -354,6 +459,31 @@ void new_input(struct wl_listener *listener, void *data) {
 		caps |= WL_SEAT_CAPABILITY_KEYBOARD;
 	}
 	wlr_seat_set_capabilities(server->seat, caps);
+}
+
+void request_cursor(struct wl_listener *listener, void *data) {
+	struct wlr_seat_pointer_request_set_cursor_event *event;
+	struct wlr_seat_client *focused;
+	struct mywm_server *server;
+
+	event = data;
+	server = wl_container_of(listener, server, request_cursor);
+	focused = server->seat->pointer_state.focused_client;
+
+	if (focused == event->seat_client) {
+		wlr_cursor_set_surface(server->cursor, event->surface,
+				event->hotspot_x, event->hotspot_y);
+	}
+}
+
+void request_set_selection(struct wl_listener *listener, void *data) {
+	struct wlr_seat_request_set_selection_event *event;
+	struct mywm_server *server;
+
+	event = data;
+	server = wl_container_of(listener, server, request_set_selection);
+
+	wlr_seat_set_selection(server->seat, event->source, event->serial);
 }
 
 void resize_client(struct mywm_client *client, int x, int y,
@@ -402,6 +532,31 @@ void focus_client(struct mywm_client *client, struct wlr_surface *surface) {
 				&keyboard->modifiers);
 	}
 	server->active_client = client;
+}
+
+struct mywm_client *client_at(struct mywm_server *server, double lx, double ly,
+		struct wlr_surface **surface, double *sx, double *sy) {
+	struct wlr_scene_tree *tree;
+	struct wlr_scene_node *node;
+	struct wlr_scene_buffer *scene_buffer;
+	struct wlr_scene_surface *scene_surface;
+
+	node = wlr_scene_node_at(&server->scene->tree.node, lx, ly, sx, sy);
+	if (node == NULL || node->type != WLR_SCENE_NODE_BUFFER) {
+		return NULL;
+	}
+	scene_buffer = wlr_scene_buffer_from_node(node);
+	scene_surface = wlr_scene_surface_try_from_buffer(scene_buffer);
+	if (scene_surface == NULL) {
+		return NULL;
+	}
+	*surface = scene_surface->surface;
+
+	tree = node->parent;
+	while (tree != NULL && tree->node.data == NULL) {
+		tree = tree->node.parent;
+	}
+	return tree->node.data;
 }
 
 void tile(struct wlr_output_layout *output_layout, struct wl_list *clients) {
@@ -582,11 +737,35 @@ int main(int argc, char *argv[]) {
 	LISTEN(server.xdg_decoration_mgr, new_toplevel_decoration,
 			&server.new_xdg_decoration);
 
-	wl_list_init(&server.keyboards);
+	server.cursor = wlr_cursor_create();
+	wlr_cursor_attach_output_layout(server.cursor, server.output_layout);
 
+	server.cursor_mgr = wlr_xcursor_manager_create(NULL, 24);
+	NOTIFY(server.cursor_motion, cursor_motion);
+	LISTEN(server.cursor, motion, &server.cursor_motion);
+
+	NOTIFY(server.cursor_motion_absolute, cursor_motion_absolute);
+	LISTEN(server.cursor, motion_absolute, &server.cursor_motion_absolute);
+
+	NOTIFY(server.cursor_button, cursor_button);
+	LISTEN(server.cursor, button, &server.cursor_button);
+
+	NOTIFY(server.cursor_axis, cursor_axis);
+	LISTEN(server.cursor, axis, &server.cursor_axis);
+
+	NOTIFY(server.cursor_frame, cursor_frame);
+	LISTEN(server.cursor, frame, &server.cursor_frame);
+
+	wl_list_init(&server.keyboards);
 	NOTIFY(server.new_input, new_input);
 	LISTEN(server.backend, new_input, &server.new_input);
+
 	server.seat = wlr_seat_create(server.wl_display, "seat0");
+	NOTIFY(server.request_cursor, request_cursor);
+	LISTEN(server.seat, request_set_cursor, &server.request_cursor);
+
+	NOTIFY(server.request_set_selection, request_set_selection);
+	LISTEN(server.seat, request_set_selection, &server.request_set_selection);
 
 	socket = wl_display_add_socket_auto(server.wl_display);
 	assert(socket);

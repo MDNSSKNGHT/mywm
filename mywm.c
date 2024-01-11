@@ -47,7 +47,7 @@ struct mywm_server {
 	struct wl_listener new_xdg_decoration;
 
 	struct wl_list clients;
-	struct mywm_client* active_client;
+	struct mywm_client *active_client;
 
 	struct wlr_seat *seat;
 	struct wl_listener new_input;

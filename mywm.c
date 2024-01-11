@@ -228,7 +228,7 @@ bool keyboard_keybinding(struct mywm_server *server, xkb_keysym_t sym) {
 		spawn((char*[]){"kitty", NULL});
 		break;
 	case XKB_KEY_c:
-		if (wl_list_empty(&server->clients)) {
+		if (server->active_client == NULL) {
 			break;
 		}
 		wlr_xdg_toplevel_send_close(
@@ -628,6 +628,8 @@ void surface_unmap(struct wl_listener *listener, void *data) {
 	if (!wl_list_empty(&server->clients)) {
 		prev_client = wl_container_of(server->clients.next, prev_client, link);
 		focus_client(prev_client, prev_client->xdg_surface->surface);
+	} else {
+		server->active_client = NULL;
 	}
 }
 

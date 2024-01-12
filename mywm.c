@@ -208,6 +208,8 @@ void keyboard_modifiers(struct wl_listener *listener, void *data) {
 
 void focus_client(struct mywm_client *client, struct wlr_surface *surface);
 
+void focus_client_link(struct mywm_server *server, int i);
+
 void spawn(char *argv[]) {
 	if (fork() == 0) {
 		setsid();
@@ -235,26 +237,10 @@ bool keyboard_keybinding(struct mywm_server *server, xkb_keysym_t sym) {
 				server->active_client->xdg_surface->toplevel);
 		break;
 	case XKB_KEY_k:
-		if (wl_list_length(&server->clients) < 2) {
-			break;
-		}
-		if (server->active_client->link.next == &server->clients) {
-			break;
-		}
-		next_client = wl_container_of(server->active_client->link.next,
-				next_client, link);
-		focus_client(next_client, next_client->xdg_surface->surface);
+		focus_client_link(server, 1);
 		break;
 	case XKB_KEY_j:
-		if (wl_list_length(&server->clients) < 2) {
-			break;
-		}
-		if (server->active_client->link.prev == &server->clients) {
-			break;
-		}
-		prev_client = wl_container_of(server->active_client->link.prev,
-				prev_client, link);
-		focus_client(prev_client, prev_client->xdg_surface->surface);
+		focus_client_link(server, -1);
 		break;
 	default:
 		return false;
@@ -536,6 +522,26 @@ void focus_client(struct mywm_client *client, struct wlr_surface *surface) {
 				&keyboard->modifiers);
 	}
 	server->active_client = client;
+}
+
+void focus_client_link(struct mywm_server *server, int i) {
+	struct wl_list *link;
+	struct mywm_client *client, *active_client;
+
+	if (wl_list_length(&server->clients) < 2) {
+		return;
+	}
+	active_client = server->active_client;
+	if (i > 0) {
+		link = active_client->link.next;
+	} else {
+		link = active_client->link.prev;
+	}
+	if (link == &server->clients) {
+		return;
+	}
+	client = wl_container_of(link, client, link);
+	focus_client(client, client->xdg_surface->surface);
 }
 
 struct mywm_client *client_at(struct mywm_server *server, double lx, double ly,
